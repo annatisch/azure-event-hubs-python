@@ -7,10 +7,8 @@ import logging
 import asyncio
 import sys
 import os
-import signal
-import functools
-import time
-import pytest
+import argparse
+from logging.handlers import RotatingFileHandler
 
 from azure.eventprocessorhost import (
     AbstractEventProcessor,
@@ -19,19 +17,19 @@ from azure.eventprocessorhost import (
     EventProcessorHost,
     EPHOptions)
 
-from azure.eventhub import EventHubClient, Sender, EventData
-import sys
-import logging
-from logging.handlers import RotatingFileHandler
-
 
 def get_logger(filename, level=logging.INFO):
     azure_logger = logging.getLogger("azure")
     azure_logger.setLevel(level)
     uamqp_logger = logging.getLogger("uamqp")
-    uamqp_logger.setLevel(level)
+    uamqp_logger.setLevel(logging.INFO)
 
     formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+    console_handler = logging.StreamHandler(stream=sys.stdout)
+    console_handler.setFormatter(formatter)
+    azure_logger.addHandler(console_handler)
+    uamqp_logger.addHandler(console_handler)
+
     if filename:
         file_handler = RotatingFileHandler(filename, maxBytes=20*1024*1024, backupCount=3)
         file_handler.setFormatter(formatter)
@@ -40,7 +38,7 @@ def get_logger(filename, level=logging.INFO):
 
     return azure_logger
 
-logger = get_logger("eph_test.log", logging.INFO)
+logger = get_logger("eph_test_async.log", logging.INFO)
 
 
 class EventProcessor(AbstractEventProcessor):
@@ -82,7 +80,7 @@ class EventProcessor(AbstractEventProcessor):
         :param messages: The events to be processed.
         :type messages: list[~azure.eventhub.common.EventData]
         """
-        logger.info("Processing id {}, offset {}, sq_number {})".format(
+        print("Processing id {}, offset {}, sq_number {})".format(
             context.partition_id,
             context.offset,
             context.sequence_number))
@@ -100,41 +98,46 @@ class EventProcessor(AbstractEventProcessor):
         logger.info("Event Processor Error for partition {}, {!r}".format(context.partition_id, error))
 
 
-async def wait_and_close(host):
+async def wait_and_close(host, duration):
     """
-    Run EventProcessorHost for 30 then shutdown.
+    Run EventProcessorHost for 30 seconds then shutdown.
     """
-    await asyncio.sleep(30)
+    await asyncio.sleep(duration)
     await host.close_async()
 
 
 def test_long_running_eph():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--duration", help="Duration in seconds of the test", type=int, default=30)
+    parser.add_argument("--storage-account", help="Storage account name", default=os.environ.get('AZURE_STORAGE_ACCOUNT'))
+    parser.add_argument("--storage-key", help="Storage account access key", default=os.environ.get('AZURE_STORAGE_ACCESS_KEY'))
+    parser.add_argument("--container", help="Lease container name", default="leases")
+    parser.add_argument("--eventhub", help="Name of EventHub", default=os.environ['EVENT_HUB_NAME'])
+    parser.add_argument("--namespace", help="Namespace of EventHub", default=os.environ['EVENT_HUB_NAMESPACE'])
+    parser.add_argument("--suffix", help="Namespace of EventHub", default="servicebus.windows.net")
+    parser.add_argument("--sas-policy", help="Name of the shared access policy to authenticate with", default=os.environ['EVENT_HUB_SAS_POLICY'])
+    parser.add_argument("--sas-key", help="Shared access key", default=os.environ['EVENT_HUB_SAS_KEY'])
+
     loop = asyncio.get_event_loop()
-
-    # Storage Account Credentials
-    try:
-        STORAGE_ACCOUNT_NAME = os.environ['AZURE_STORAGE_ACCOUNT']
-        STORAGE_KEY = os.environ['AZURE_STORAGE_SAS_KEY']
-        LEASE_CONTAINER_NAME = "testleases"
-
-        NAMESPACE = os.environ['EVENT_HUB_NAMESPACE']
-        EVENTHUB = os.environ['EVENT_HUB_NAME']
-        USER = os.environ['EVENT_HUB_SAS_POLICY']
-        KEY = os.environ['EVENT_HUB_SAS_KEY']
-    except KeyError:
-        pytest.skip("Missing live configuration.")
+    args, _ = parser.parse_known_args()
 
     # Eventhub config and storage manager 
-    eh_config = EventHubConfig(NAMESPACE, EVENTHUB, USER, KEY, consumer_group="$default")
+    eh_config = EventHubConfig(
+        args.namespace,
+        args.eventhub,
+        args.sas_policy,
+        args.sas_key,
+        consumer_group="$default",
+        namespace_suffix=args.suffix)
     eh_options = EPHOptions()
     eh_options.release_pump_on_timeout = True
     eh_options.debug_trace = False
     eh_options.receive_timeout = 120
     storage_manager = AzureStorageCheckpointLeaseManager(
-        storage_account_name=STORAGE_ACCOUNT_NAME,
-        storage_account_key=STORAGE_KEY,
+        storage_account_name=args.storage_account,
+        storage_account_key=args.storage_key,
         lease_renew_interval=30,
-        lease_container_name=LEASE_CONTAINER_NAME,
+        lease_container_name=args.container,
         lease_duration=60)
 
     # Event loop and host
@@ -148,7 +151,7 @@ def test_long_running_eph():
 
     tasks = asyncio.gather(
         host.open_async(),
-        wait_and_close(host), return_exceptions=True)
+        wait_and_close(host, args.duration), return_exceptions=True)
     results = loop.run_until_complete(tasks)
     assert not any(results)
 

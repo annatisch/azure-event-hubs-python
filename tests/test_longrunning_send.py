@@ -4,26 +4,28 @@
 send test
 """
 
-import logging
 import argparse
 import time
-import threading
 import os
-
-from azure.eventhub import EventHubClient, Sender, EventData
-
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
+
+from azure.eventhub import EventHubClient, Sender, EventData
 
 
 def get_logger(filename, level=logging.INFO):
     azure_logger = logging.getLogger("azure")
     azure_logger.setLevel(level)
     uamqp_logger = logging.getLogger("uamqp")
-    uamqp_logger.setLevel(level)
+    uamqp_logger.setLevel(logging.INFO)
 
     formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+    console_handler = logging.StreamHandler(stream=sys.stdout)
+    console_handler.setFormatter(formatter)
+    azure_logger.addHandler(console_handler)
+    uamqp_logger.addHandler(console_handler)
+
     if filename:
         file_handler = RotatingFileHandler(filename, maxBytes=20*1024*1024, backupCount=3)
         file_handler.setFormatter(formatter)

@@ -103,11 +103,9 @@ def test_send_to_invalid_partitions(connection_str):
     for p in partitions:
         client = EventHubClient.from_connection_string(connection_str, debug=False)
         sender = client.add_sender(partition=p)
-        client.run()
-        data = EventData(b"A" * 300000)
         try:
             with pytest.raises(EventHubError):
-                sender.send(data)
+                client.run()
         finally:
             client.stop()
 
@@ -184,8 +182,7 @@ def test_message_body_types(connection_str, senders):
         received = receiver.receive(timeout=5)
         assert len(received) == 1
         assert received[0].body_as_str() == "42"
-        with pytest.raises(ValueError):
-            received[0].body
+        assert received[0].body == 42
     except:
         raise
     finally:

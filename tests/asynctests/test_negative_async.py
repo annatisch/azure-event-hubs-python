@@ -115,11 +115,9 @@ async def test_send_to_invalid_partitions_async(connection_str):
     for p in partitions:
         client = EventHubClientAsync.from_connection_string(connection_str, debug=False)
         sender = client.add_async_sender(partition=p)
-        await client.run_async()
-        data = EventData(b"A" * 300000)
         try:
             with pytest.raises(EventHubError):
-                await sender.send(data)
+                await client.run_async()
         finally:
             await client.stop_async()
 

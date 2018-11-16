@@ -15,19 +15,24 @@ import argparse
 import time
 import os
 import sys
-from urllib.parse import quote_plus
 from logging.handlers import RotatingFileHandler
 
 from azure.eventhub import Offset
 from azure.eventhub import EventHubClientAsync
 
+
 def get_logger(filename, level=logging.INFO):
     azure_logger = logging.getLogger("azure")
     azure_logger.setLevel(level)
     uamqp_logger = logging.getLogger("uamqp")
-    uamqp_logger.setLevel(level)
+    uamqp_logger.setLevel(logging.INFO)
 
     formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+    console_handler = logging.StreamHandler(stream=sys.stdout)
+    console_handler.setFormatter(formatter)
+    azure_logger.addHandler(console_handler)
+    uamqp_logger.addHandler(console_handler)
+
     if filename:
         file_handler = RotatingFileHandler(filename, maxBytes=20*1024*1024, backupCount=3)
         file_handler.setFormatter(formatter)
@@ -39,8 +44,8 @@ def get_logger(filename, level=logging.INFO):
 logger = get_logger("recv_test_async.log", logging.INFO)
 
 
-async def get_partitions(args):
-    eh_data = await args.get_eventhub_info_async()
+async def get_partitions(client):
+    eh_data = await client.get_eventhub_info_async()
     return eh_data["partition_ids"]
 
 
@@ -50,7 +55,7 @@ async def pump(_pid, receiver, _args, _dl):
     deadline = time.time() + _dl
     try:
         while time.time() < deadline:
-            batch = await receiver.receive(timeout=5)
+            batch = await receiver.receive(timeout=1)
             size = len(batch)
             total += size
             iteration += 1
@@ -59,7 +64,7 @@ async def pump(_pid, receiver, _args, _dl):
                     _pid,
                     receiver.queue_size,
                     total))
-            elif iteration >= 50:
+            elif iteration >= 5:
                 iteration = 0
                 print("{}: total received {}, last sn={}, last offset={}".format(
                             _pid,
@@ -74,7 +79,7 @@ async def pump(_pid, receiver, _args, _dl):
         raise
 
 
-def test_long_running_receive_async():
+def test_long_running_receive():
     parser = argparse.ArgumentParser()
     parser.add_argument("--duration", help="Duration in seconds of the test", type=int, default=30)
     parser.add_argument("--consumer", help="Consumer group name", default="$default")
@@ -91,10 +96,11 @@ def test_long_running_receive_async():
     if args.conn_str:
         client = EventHubClientAsync.from_connection_string(
             args.conn_str,
-            eventhub=args.eventhub, debug=False)
+            eventhub=args.eventhub, auth_timeout=240, debug=False)
     elif args.address:
         client = EventHubClientAsync(
             args.address,
+            auth_timeout=240,
             username=args.sas_policy,
             password=args.sas_key)
     else:
@@ -124,4 +130,4 @@ def test_long_running_receive_async():
 
 
 if __name__ == '__main__':
-    test_long_running_receive_async()
+    test_long_running_receive()
