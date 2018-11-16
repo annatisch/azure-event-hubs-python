@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 
 import uuid
 import logging
+import time
 
 from uamqp import types, errors
 from uamqp import ReceiveClient, Source
@@ -98,8 +99,8 @@ class Receiver(object):
                 client_name=self.name,
                 properties=self.client.create_properties())
         self._handler.open()
-        while not self.has_started():
-            self._handler._connection.work()
+        while not self._handler.client_ready():
+            time.sleep(0.05)
 
     def reconnect(self):
         """If the Receiver was disconnected from the service with
@@ -125,8 +126,8 @@ class Receiver(object):
             properties=self.client.create_properties())
         try:
             self._handler.open()
-            while not self.has_started():
-                self._handler._connection.work()
+            while not self._handler.client_ready():
+                time.sleep(0.05)
         except (errors.LinkDetach, errors.ConnectionClose) as shutdown:
             if shutdown.action.retry and self.auto_reconnect:
                 self.reconnect()
@@ -161,6 +162,7 @@ class Receiver(object):
         Whether the handler has completed all start up processes such as
         establishing the connection, session, link and authentication, and
         is not ready to process messages.
+        **This function is now deprecated and will be removed in v2.0+.**
 
         :rtype: bool
         """

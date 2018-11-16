@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 
 import uuid
 import logging
+import time
 
 from uamqp import constants, errors
 from uamqp import SendClient
@@ -89,8 +90,8 @@ class Sender(object):
                 client_name=self.name,
                 properties=self.client.create_properties())
         self._handler.open()
-        while not self.has_started():
-            self._handler._connection.work()  # pylint: disable=protected-access
+        while not self._handler.client_ready():
+            time.sleep(0.05)
 
     def reconnect(self):
         """If the Sender was disconnected from the service with
@@ -145,6 +146,7 @@ class Sender(object):
         Whether the handler has completed all start up processes such as
         establishing the connection, session, link and authentication, and
         is not ready to process messages.
+        **This function is now deprecated and will be removed in v2.0+.**
 
         :rtype: bool
         """
