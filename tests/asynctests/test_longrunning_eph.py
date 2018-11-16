@@ -120,6 +120,12 @@ def test_long_running_eph():
 
     loop = asyncio.get_event_loop()
     args, _ = parser.parse_known_args()
+    if not args.namespace or not args.eventhub:
+        try:
+            import pytest
+            pytest.skip("Must specify '--namespace' and '--eventhub'")
+        except ImportError:
+            raise ValueError("Must specify '--namespace' and '--eventhub'")
 
     # Eventhub config and storage manager 
     eh_config = EventHubConfig(
